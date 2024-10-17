@@ -1,0 +1,9 @@
+---
+
+psql_max_connections: 500
+
+
+psql_users: []
+psql_dbs: []
+
+psql_monitoring_user_password: prometheus

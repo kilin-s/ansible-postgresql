@@ -1,0 +1,100 @@
+---
+
+# ansible-galaxy collection install community.postgresql
+
+
+- name: Install prerequisites
+  apt:
+    name: python3-psycopg2
+    state: present
+    update_cache: true
+
+
+- name: Add an Apt signing key
+  apt_key:
+    url: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+    state: present
+
+
+- name: Add postgres repository
+  apt_repository:
+    repo: deb https://apt.postgresql.org/pub/repos/apt {{ ansible_facts.distribution_release }}-pgdg main
+    state: present
+    filename: psql
+
+
+- name: Install postgres
+  apt:
+    state: present
+    name: postgresql-16=16.2-1.pgdg20.04+1
+    update_cache: true
+
+
+- name: Create users
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    db: postgres
+    name: "{{ item.name }}"
+    password: "{{ item.password }}"
+    login_unix_socket: /var/run/postgresql
+    state: present
+  loop: "{{ psql_users }}"
+  
+
+- name: Create databases
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    name: "{{ item.name }}"
+    encoding: "{{ item.encoding }}"
+    lc_collate: "{{ item.lc_collate }}"
+    lc_ctype: "{{ item.lc_ctype }}"
+    owner: "{{ item.owner }}"
+    login_unix_socket: /var/run/postgresql
+  loop: "{{ psql_dbs }}"
+
+
+- name: Create monitoring user
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    db: postgres
+    name: prometheus
+    password: "{{ psql_monitoring_user_password }}"
+    login_unix_socket: /var/run/postgresql
+    state: present
+
+
+- name: Grant role for monitoring user 
+  become_user: postgres
+  community.postgresql.postgresql_membership:
+    group: pg_monitor
+    target_roles: prometheus
+    state: present
+    login_unix_socket: /var/run/postgresql
+
+
+- name: Copy postgresql conf
+  template:
+    src: postgresql.conf.j2
+    dest: /etc/postgresql/16/main/postgresql.conf
+    owner: postgres
+    group: postgres
+    mode: 0644
+  notify:
+    - Restart postgresql
+
+
+- name: Copy pghba conf
+  template:
+    src: pg_hba.conf.j2
+    dest: /etc/postgresql/16/main/pg_hba.conf
+    owner: postgres
+    group: postgres
+    mode: 0640
+  notify:
+    - Reload postgresql
+
+
+- name: Enable postgresql autostart
+  systemd:
+    name: postgresql@16-main.service
+    enabled: true
